@@ -6,95 +6,306 @@
 <title>SRun Auto Login</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-:root{--bg:#0f0f13;--card:#1a1a24;--accent:#6c5ce7;--accent2:#a29bfe;--green:#00b894;--red:#ff6b6b;--orange:#fdcb6e;--text:#e8e8f0;--text2:#9090a8;--border:#2a2a40;--radius:14px}
-body{font-family:-apple-system,Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:0 0 30px}
-.header{background:linear-gradient(135deg,#6c5ce7,#a29bfe);padding:24px 16px 18px;text-align:center}
-.header h1{font-size:20px;font-weight:700}
-.header p{font-size:12px;opacity:.8;margin-top:3px}
-.c{max-width:460px;margin:0 auto;padding:12px}
-.card{background:var(--card);border-radius:var(--radius);padding:16px;margin-bottom:12px;border:1px solid var(--border)}
-.card-title{font-size:14px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:6px}
+:root{
+  --bg:#0a0a12;
+  --card:rgba(22,22,38,0.85);
+  --card-solid:#161626;
+  --accent:#7c6cf0;
+  --accent2:#a594ff;
+  --accent-glow:rgba(124,108,240,0.25);
+  --green:#00d2a0;
+  --green-glow:rgba(0,210,160,0.2);
+  --red:#ff6b81;
+  --red-glow:rgba(255,107,129,0.2);
+  --orange:#ffa94d;
+  --text:#eeeef6;
+  --text2:#7a7a96;
+  --text3:#4a4a66;
+  --border:rgba(255,255,255,0.06);
+  --border-focus:rgba(124,108,240,0.4);
+  --radius:16px;
+  --radius-sm:10px;
+}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  min-height:100vh;
+  padding:0 0 40px;
+  -webkit-font-smoothing:antialiased;
+}
+body::before{
+  content:'';position:fixed;top:0;left:0;right:0;bottom:0;
+  background:
+    radial-gradient(ellipse 600px 400px at 20% 10%,rgba(124,108,240,0.08),transparent),
+    radial-gradient(ellipse 500px 300px at 80% 80%,rgba(0,210,160,0.05),transparent);
+  pointer-events:none;z-index:0;
+}
+.c{max-width:480px;margin:0 auto;padding:16px;position:relative;z-index:1}
 
-/* Status */
-.sc{position:relative;overflow:hidden;border-radius:var(--radius);padding:16px;margin-bottom:12px;background:var(--card);border:1px solid var(--border)}
-.sc::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
-.sc.online::before{background:linear-gradient(90deg,#00b894,#55efc4)}
-.sc.error::before{background:linear-gradient(90deg,#ff6b6b,#ee5a24)}
-.sc.idle::before{background:#636e72}
-.sc.connecting::before,.sc.logging_in::before,.sc.reconnecting::before{background:linear-gradient(90deg,#fdcb6e,#e17055)}
-.sr{display:flex;align-items:center;gap:10px}
-.sd{width:12px;height:12px;border-radius:50%;flex-shrink:0}
-.sd.online{background:#00b894;box-shadow:0 0 10px rgba(0,184,148,.5)}
-.sd.error{background:#ff6b6b}
-.sd.idle{background:#636e72}
-.sd.connecting,.sd.logging_in,.sd.reconnecting{background:#fdcb6e;animation:blink 1s infinite}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
-.sl{font-size:15px;font-weight:600}
-.sdt{font-size:12px;color:var(--text2);margin-top:5px;padding-left:22px}
+/* ── Header ── */
+.header{
+  position:relative;
+  background:linear-gradient(135deg,#5b4dcf 0%,#7c6cf0 40%,#a594ff 100%);
+  padding:32px 20px 24px;
+  text-align:center;
+  overflow:hidden;
+}
+.header::before{
+  content:'';position:absolute;top:-50%;left:-50%;width:200%;height:200%;
+  background:radial-gradient(circle at 30% 40%,rgba(255,255,255,0.08),transparent 60%);
+  pointer-events:none;
+}
+.header::after{
+  content:'';position:absolute;bottom:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,0.2),transparent);
+}
+.header h1{font-size:22px;font-weight:800;letter-spacing:-0.3px;position:relative}
+.header p{font-size:12px;opacity:.7;margin-top:4px;font-weight:400;letter-spacing:0.5px;position:relative}
 
-/* Grid */
-.g{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
-.gi{background:var(--card);border-radius:12px;padding:12px;border:1px solid var(--border)}
-.gi .l{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px}
-.gi .v{font-size:14px;font-weight:600;margin-top:3px}
-.gi .v.m{font-family:monospace;font-size:12px}
+/* ── Status Card ── */
+.sc{
+  position:relative;
+  border-radius:var(--radius);
+  padding:18px 16px;
+  margin:14px 0;
+  background:var(--card);
+  backdrop-filter:blur(20px);
+  border:1px solid var(--border);
+  overflow:hidden;
+  transition:all .3s;
+}
+.sc::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  transition:background .3s;
+}
+.sc.online::before{background:linear-gradient(90deg,#00d2a0,#55efc4,#00d2a0);background-size:200% 100%;animation:shimmer 3s ease infinite}
+.sc.error::before{background:linear-gradient(90deg,#ff6b81,#ee5a24)}
+.sc.idle::before{background:linear-gradient(90deg,#4a4a66,#636e72)}
+.sc.logging_in::before,.sc.connecting::before,.sc.reconnecting::before{background:linear-gradient(90deg,#ffa94d,#ff6b81);animation:pulse-bar 1.5s ease infinite}
+@keyframes shimmer{0%,100%{background-position:0% 0}50%{background-position:200% 0}}
+@keyframes pulse-bar{0%,100%{opacity:1}50%{opacity:.5}}
 
-/* Form */
-.fg{margin-bottom:10px}
-.fg label{display:block;font-size:11px;color:var(--text2);margin-bottom:4px;font-weight:500}
-.fg input{width:100%;padding:9px 12px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-size:13px;outline:none;transition:border-color .15s}
-.fg input:focus{border-color:var(--accent)}
-.fr{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.sr{display:flex;align-items:center;gap:12px}
+.sd{
+  width:10px;height:10px;border-radius:50%;flex-shrink:0;
+  position:relative;
+}
+.sd::after{
+  content:'';position:absolute;inset:-3px;border-radius:50%;
+  opacity:0;transition:opacity .3s;
+}
+.sd.online{background:#00d2a0;box-shadow:0 0 8px var(--green-glow)}
+.sd.online::after{border:2px solid rgba(0,210,160,0.3);opacity:1;animation:ring-pulse 2s ease infinite}
+.sd.error{background:#ff6b81;box-shadow:0 0 8px var(--red-glow)}
+.sd.idle{background:#4a4a66}
+.sd.logging_in,.sd.connecting,.sd.reconnecting{background:#ffa94d;animation:blink 1s infinite}
+@keyframes ring-pulse{0%{transform:scale(1);opacity:.6}100%{transform:scale(2.2);opacity:0}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
 
-/* Buttons */
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:9px 16px;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;user-select:none;-webkit-tap-highlight-color:transparent}
-.btn:active{transform:scale(.96);opacity:.85}
-.btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
-.bp{background:linear-gradient(135deg,#6c5ce7,#a29bfe);color:#fff}
-.bd{background:linear-gradient(135deg,#ff6b6b,#ee5a24);color:#fff}
-.bg{background:linear-gradient(135deg,#00b894,#55efc4);color:#fff}
-.bo{background:linear-gradient(135deg,#fdcb6e,#e17055);color:#fff}
-.bs{padding:6px 12px;font-size:11px;border-radius:8px}
-.bf{display:flex;gap:8px;margin-top:12px}
+.sl{font-size:15px;font-weight:700;letter-spacing:-0.2px}
+.sdt{font-size:11px;color:var(--text2);margin-top:6px;padding-left:22px;line-height:1.4}
 
-/* Tabs */
-.tabs{display:flex;gap:0;margin-bottom:12px;background:var(--card);border-radius:11px;padding:3px;border:1px solid var(--border)}
-.tab{flex:1;text-align:center;padding:8px 0;font-size:12px;font-weight:500;border-radius:8px;cursor:pointer;color:var(--text2);transition:all .15s;user-select:none}
-.tab.a{background:var(--accent);color:#fff}
-.tc{display:none}
+/* ── Info Grid ── */
+.g{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}
+.gi{
+  background:var(--card);
+  backdrop-filter:blur(20px);
+  border-radius:var(--radius-sm);
+  padding:14px;
+  border:1px solid var(--border);
+  transition:border-color .2s;
+}
+.gi:hover{border-color:var(--border-focus)}
+.gi .l{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:600}
+.gi .v{font-size:14px;font-weight:700;margin-top:4px;letter-spacing:-0.2px}
+.gi .v.m{font-family:'SF Mono',SFMono-Regular,Consolas,monospace;font-size:12px;font-weight:500;color:var(--accent2)}
+
+/* ── Tabs ── */
+.tabs{
+  display:flex;gap:0;margin:14px 0;
+  background:rgba(22,22,38,0.6);
+  border-radius:12px;padding:3px;
+  border:1px solid var(--border);
+}
+.tab{
+  flex:1;text-align:center;
+  padding:9px 0;font-size:12px;font-weight:600;
+  border-radius:9px;cursor:pointer;
+  color:var(--text3);
+  transition:all .2s;user-select:none;
+  letter-spacing:0.2px;
+}
+.tab:active{transform:scale(.97)}
+.tab.a{
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  color:#fff;
+  box-shadow:0 2px 12px var(--accent-glow);
+}
+.tc{display:none;animation:fadeUp .25s ease}
 .tc.a{display:block}
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 
-/* Log */
-.lv{background:#0a0a10;border-radius:9px;padding:10px;max-height:260px;overflow-y:auto;font-family:monospace;font-size:10px;line-height:1.5;color:#a0a0c0;border:1px solid var(--border)}
-.ll{white-space:pre-wrap;word-break:break-all}
-.ll.e{color:#ff6b6b}
-.ll.s{color:#00b894}
-.ll.w{color:#fdcb6e}
+/* ── Cards ── */
+.card{
+  background:var(--card);
+  backdrop-filter:blur(20px);
+  border-radius:var(--radius);
+  padding:18px;
+  margin-bottom:12px;
+  border:1px solid var(--border);
+  transition:border-color .2s;
+}
+.card:hover{border-color:rgba(255,255,255,0.08)}
+.card-title{
+  font-size:13px;font-weight:700;margin-bottom:14px;
+  display:flex;align-items:center;gap:7px;
+  letter-spacing:-0.1px;
+}
 
-/* Tags */
-.tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
-.tag{background:var(--card);border:1px solid var(--border);border-radius:7px;padding:4px 10px;font-size:11px;display:flex;align-items:center;gap:5px}
-.tag .d{width:5px;height:5px;border-radius:50%;background:var(--accent)}
-.tag.a .d{background:var(--green);box-shadow:0 0 5px rgba(0,184,148,.5)}
+/* ── Form ── */
+.fg{margin-bottom:12px}
+.fg label{
+  display:block;font-size:11px;color:var(--text2);
+  margin-bottom:6px;font-weight:600;
+  letter-spacing:0.3px;
+}
+.fg input{
+  width:100%;padding:11px 14px;
+  background:rgba(10,10,18,0.6);
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  color:var(--text);font-size:13px;
+  outline:none;transition:all .2s;
+}
+.fg input::placeholder{color:var(--text3)}
+.fg input:focus{
+  border-color:var(--border-focus);
+  box-shadow:0 0 0 3px var(--accent-glow);
+  background:rgba(10,10,18,0.8);
+}
+.fr{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 
-/* Toast */
-.toast{position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-80px);background:var(--card);border:1px solid var(--border);border-radius:11px;padding:10px 18px;font-size:12px;font-weight:500;z-index:999;transition:transform .25s;box-shadow:0 6px 20px rgba(0,0,0,.4);pointer-events:none}
-.toast.show{transform:translateX(-50%) translateY(0)}
+/* ── Buttons ── */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  padding:11px 18px;border:none;border-radius:var(--radius-sm);
+  font-size:13px;font-weight:700;cursor:pointer;
+  transition:all .15s;user-select:none;
+  -webkit-tap-highlight-color:transparent;
+  letter-spacing:0.1px;
+  position:relative;overflow:hidden;
+}
+.btn::after{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(180deg,rgba(255,255,255,0.08),transparent);
+  pointer-events:none;
+}
+.btn:active{transform:scale(.97);filter:brightness(.9)}
+.btn:disabled{opacity:.4;cursor:not-allowed;transform:none;filter:none}
+.bp{
+  background:linear-gradient(135deg,#5b4dcf,#7c6cf0);
+  color:#fff;
+  box-shadow:0 2px 16px var(--accent-glow);
+}
+.bp:hover{box-shadow:0 4px 24px rgba(124,108,240,0.35)}
+.bd{
+  background:linear-gradient(135deg,#e05050,#ff6b81);
+  color:#fff;
+  box-shadow:0 2px 12px var(--red-glow);
+}
+.bg{
+  background:linear-gradient(135deg,#00a884,#00d2a0);
+  color:#fff;
+  box-shadow:0 2px 12px var(--green-glow);
+}
+.bo{background:linear-gradient(135deg,#e88a30,#ffa94d);color:#fff}
+.bs{padding:7px 13px;font-size:11px;border-radius:8px;font-weight:600}
+.bf{display:flex;gap:10px;margin-top:14px}
+
+/* ── Log ── */
+.lv{
+  background:rgba(8,8,16,0.8);
+  border-radius:var(--radius-sm);
+  padding:12px;
+  max-height:280px;overflow-y:auto;
+  font-family:'SF Mono',SFMono-Regular,Consolas,monospace;
+  font-size:10px;line-height:1.6;
+  color:#8888aa;
+  border:1px solid var(--border);
+}
+.lv::-webkit-scrollbar{width:4px}
+.lv::-webkit-scrollbar-track{background:transparent}
+.lv::-webkit-scrollbar-thumb{background:var(--text3);border-radius:2px}
+.ll{white-space:pre-wrap;word-break:break-all;padding:1px 0}
+.ll.e{color:#ff6b81}
+.ll.s{color:#00d2a0}
+.ll.w{color:#ffa94d}
+
+/* ── Tags ── */
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.tag{
+  background:rgba(124,108,240,0.08);
+  border:1px solid rgba(124,108,240,0.15);
+  border-radius:8px;padding:5px 12px;
+  font-size:11px;font-weight:600;
+  display:flex;align-items:center;gap:6px;
+  color:var(--text2);
+  transition:all .2s;
+}
+.tag .d{width:6px;height:6px;border-radius:50%;background:var(--text3);transition:all .2s}
+.tag.a{
+  background:rgba(0,210,160,0.1);
+  border-color:rgba(0,210,160,0.25);
+  color:var(--green);
+}
+.tag.a .d{background:var(--green);box-shadow:0 0 6px var(--green-glow)}
+
+/* ── Toast ── */
+.toast{
+  position:fixed;top:20px;left:50%;
+  transform:translateX(-50%) translateY(-80px);
+  background:var(--card-solid);
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:12px 20px;
+  font-size:12px;font-weight:600;
+  z-index:999;
+  transition:transform .3s cubic-bezier(.4,0,.2,1),opacity .3s;
+  box-shadow:0 8px 32px rgba(0,0,0,0.5);
+  pointer-events:none;opacity:0;
+  backdrop-filter:blur(20px);
+}
+.toast.show{transform:translateX(-50%) translateY(0);opacity:1}
 .toast.ok{border-left:3px solid var(--green)}
 .toast.er{border-left:3px solid var(--red)}
 
-/* Test result */
-.test-result{margin-top:10px;font-size:12px;line-height:1.6;border-radius:9px;padding:10px;background:#0a0a10;border:1px solid var(--border)}
-.test-result .ok{color:var(--green)}
-.test-result .fail{color:var(--red)}
-.test-result .info{color:var(--text2);margin-bottom:2px}
+/* ── Test Result ── */
+.test-result{
+  margin-top:12px;font-size:12px;line-height:1.7;
+  border-radius:var(--radius-sm);
+  padding:14px;
+  background:rgba(8,8,16,0.6);
+  border:1px solid var(--border);
+}
+.test-result .ok{color:var(--green);font-weight:600}
+.test-result .fail{color:var(--red);font-weight:600}
+.test-result .info{color:var(--text2);margin-bottom:3px}
 
-/* About */
-.about-list{font-size:12px;color:var(--text2);line-height:1.8}
+/* ── About ── */
+.about-list{font-size:12px;color:var(--text2);line-height:1.9}
+.about-list b{color:var(--text)}
 
-/* Spinner */
+/* ── Spinner ── */
 @keyframes spin{to{transform:rotate(360deg)}}
 .spinning{display:inline-block;animation:spin .8s linear infinite}
+
+/* ── Responsive ── */
+@media(max-width:360px){
+  .c{padding:10px}
+  .g{gap:8px}
+  .gi{padding:10px}
+}
 </style>
 </head>
 <body>
@@ -103,58 +314,53 @@ body{font-family:-apple-system,Roboto,sans-serif;background:var(--bg);color:var(
   <p>IMUST 校园网自动认证</p>
 </div>
 <div class="c">
-  <!-- Status card -->
   <div class="sc idle" id="SC">
     <div class="sr"><div class="sd idle" id="SD"></div><div class="sl" id="SL">加载中...</div></div>
     <div class="sdt" id="SDT">正在获取状态...</div>
   </div>
 
-  <!-- Info grid -->
   <div class="g">
     <div class="gi"><div class="l">网关</div><div class="v m" id="iG">--</div></div>
-    <div class="gi"><div class="l">IP</div><div class="v m" id="iI">--</div></div>
+    <div class="gi"><div class="l">IP 地址</div><div class="v m" id="iI">--</div></div>
     <div class="gi"><div class="l">WiFi</div><div class="v" id="iS">--</div></div>
     <div class="gi"><div class="l">守护进程</div><div class="v" id="iD">--</div></div>
   </div>
 
-  <!-- Tabs -->
   <div class="tabs">
     <div class="tab a" onclick="switchTab(0)">⚙️ 配置</div>
     <div class="tab" onclick="switchTab(1)">📋 日志</div>
     <div class="tab" onclick="switchTab(2)">🧪 测试</div>
   </div>
 
-  <!-- Tab 0: Config -->
   <div class="tc a" id="T0">
     <div class="card">
-      <div class="card-title">👤 账号</div>
-      <div class="fg"><label>学号</label><input id="cU" placeholder="校园网账号"></div>
-      <div class="fg"><label>密码</label><input id="cP" type="password" placeholder="校园网密码"></div>
+      <div class="card-title">👤 账号信息</div>
+      <div class="fg"><label>学号</label><input id="cU" placeholder="请输入校园网账号"></div>
+      <div class="fg"><label>密码</label><input id="cP" type="password" placeholder="请输入校园网密码"></div>
     </div>
     <div class="card">
-      <div class="card-title">📡 网络</div>
+      <div class="card-title">📡 网络设置</div>
       <div class="fg"><label>网关地址</label><input id="cG" placeholder="gw.imust.edu.cn"></div>
       <div class="fr">
-        <div class="fg"><label>网关IP</label><input id="cGI" placeholder="10.16.42.48"></div>
-        <div class="fg"><label>ac_id</label><input id="cA" placeholder="6"></div>
+        <div class="fg"><label>网关 IP</label><input id="cGI" placeholder="10.16.42.48"></div>
+        <div class="fg"><label>AC ID</label><input id="cA" placeholder="6"></div>
       </div>
-      <div class="fg"><label>监听SSID (逗号分隔)</label><input id="cS" placeholder="imust,THUNDER"></div>
+      <div class="fg"><label>监听 SSID（逗号分隔）</label><input id="cS" placeholder="imust,THUNDER"></div>
       <div class="tags" id="tags"></div>
     </div>
     <div class="card">
-      <div class="card-title">🔄 高级</div>
+      <div class="card-title">🔄 高级选项</div>
       <div class="fr">
-        <div class="fg"><label>重试次数</label><input id="cMR" type="number" placeholder="3"></div>
-        <div class="fg"><label>检查间隔(秒)</label><input id="cCI" type="number" placeholder="5"></div>
+        <div class="fg"><label>最大重试</label><input id="cMR" type="number" placeholder="3"></div>
+        <div class="fg"><label>检查间隔（秒）</label><input id="cCI" type="number" placeholder="5"></div>
       </div>
-      <div class="fg"><label>联网后间隔(秒)</label><input id="cSI" type="number" placeholder="30"></div>
+      <div class="fg"><label>成功后间隔（秒）</label><input id="cSI" type="number" placeholder="30"></div>
     </div>
     <div class="bf">
       <button class="btn bp" style="flex:1" onclick="doSave()">💾 保存配置</button>
     </div>
   </div>
 
-  <!-- Tab 1: Logs -->
   <div class="tc" id="T1">
     <div class="card">
       <div class="card-title">📋 运行日志 <span style="flex:1"></span>
@@ -165,11 +371,10 @@ body{font-family:-apple-system,Roboto,sans-serif;background:var(--bg);color:var(
     </div>
   </div>
 
-  <!-- Tab 2: Test -->
   <div class="tc" id="T2">
     <div class="card">
       <div class="card-title">🧪 手动测试登录</div>
-      <p style="font-size:11px;color:var(--text2);margin-bottom:10px">立即执行一次完整 SRUN 登录流程，验证账号密码和网关配置是否正确</p>
+      <p style="font-size:11px;color:var(--text2);margin-bottom:12px;line-height:1.6">立即执行一次完整的 SRUN 登录流程，验证账号密码和网关配置是否正确</p>
       <button class="btn bp" style="width:100%" id="testBtn" onclick="doTestLogin()">🧪 开始测试</button>
       <div class="test-result" id="testResult" style="display:none"></div>
     </div>
@@ -177,14 +382,14 @@ body{font-family:-apple-system,Roboto,sans-serif;background:var(--bg);color:var(
     <div class="card">
       <div class="card-title">ℹ️ 关于</div>
       <div class="about-list">
-        <b>SRun Auto Login v1.0.1</b><br>
+        <b>SRun Auto Login v2.0.0</b><br>
         IMUST 校园网深澜 SRUN 自动登录模块<br><br>
-        ✅ 自动检测 WiFi (imust/THUNDER)<br>
+        ✅ 自动检测 WiFi（imust / THUNDER）<br>
         ✅ SRUN 协议自动认证<br>
         ✅ 通知栏状态 + WebUI<br>
         ✅ 掉线自动重连<br>
         ✅ Panic 恢复，永不崩溃<br><br>
-        网关: gw.imust.edu.cn · 端口: 20080
+        <span style="color:var(--text3)">网关: gw.imust.edu.cn · 端口: 20080</span>
       </div>
     </div>
   </div>
@@ -193,116 +398,63 @@ body{font-family:-apple-system,Roboto,sans-serif;background:var(--bg);color:var(
 <div class="toast" id="toast"></div>
 
 <script>
-// ============================================================
-// API 层 — 直接对接 Go 二进制内置 HTTP 服务器 (localhost:20080)
-// ============================================================
 const API_BASE = 'http://127.0.0.1:20080';
 
 async function apiGet(path) {
-  try {
-    const r = await fetch(API_BASE + path);
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    return await r.json();
-  } catch (e) {
-    console.error('[SRun] GET', path, e);
-    return null;
-  }
+  try { const r = await fetch(API_BASE + path); if (!r.ok) throw new Error('HTTP ' + r.status); return await r.json(); }
+  catch (e) { console.error('[SRun]', path, e); return null; }
 }
-
 async function apiPost(path, body) {
-  try {
-    const r = await fetch(API_BASE + path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    return await r.json();
-  } catch (e) {
-    console.error('[SRun] POST', path, e);
-    return null;
-  }
+  try { const r = await fetch(API_BASE + path, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) }); if (!r.ok) throw new Error('HTTP ' + r.status); return await r.json(); }
+  catch (e) { console.error('[SRun]', path, e); return null; }
 }
 
-// ============================================================
-// UI helpers
-// ============================================================
 const $ = id => document.getElementById(id);
 let toastTimer;
-
 function toast(msg, ok) {
-  const t = $('toast');
-  t.textContent = msg;
+  const t = $('toast'); t.textContent = msg;
   t.className = 'toast show ' + (ok !== false ? 'ok' : 'er');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove('show'), 2500);
 }
 
 window.switchTab = function(i) {
-  document.querySelectorAll('.tab').forEach((t, j) => t.classList.toggle('a', j === i));
-  document.querySelectorAll('.tc').forEach((t, j) => t.classList.toggle('a', j === i));
+  document.querySelectorAll('.tab').forEach((t,j) => t.classList.toggle('a', j===i));
+  document.querySelectorAll('.tc').forEach((t,j) => t.classList.toggle('a', j===i));
   if (i === 1) loadLogs();
 };
 
-// ============================================================
-// Status — 解析 Go 二进制返回的 JSON
-// 字段: login_state, daemon_running, pid, ip, ssid, gateway, detail, last_login
-// 配置平铺: USERNAME, PASSWORD, GATEWAY, GATEWAY_IP, AC_ID, SSIDS, MAX_RETRY, CHECK_INTERVAL, SUCCESS_INTERVAL
-// ============================================================
 let lastStatus = null;
-
 async function loadStatus() {
   const data = await apiGet('/api/status');
   if (!data) {
     $('SL').textContent = '⚠️ 无法连接';
     $('SDT').textContent = '守护进程未运行或网络异常';
-    $('SC').className = 'sc error';
-    $('SD').className = 'sd error';
+    $('SC').className = 'sc error'; $('SD').className = 'sd error';
     $('iD').textContent = '未连接 ✗';
     return;
   }
-
   lastStatus = data;
-
   const state = data.login_state || 'idle';
-  const stateMap = {
-    online: '✅ 已联网',
-    logging_in: '🔄 登录中',
-    connecting: '📡 连接中',
-    reconnecting: '🔄 重连中',
-    error: '❌ 登录失败',
-    idle: '⏳ 等待WiFi'
-  };
-
+  const map = { online:'✅ 已联网', logging_in:'🔄 登录中', connecting:'📡 连接中', reconnecting:'🔄 重连中', error:'❌ 登录失败', idle:'⏳ 等待 WiFi' };
   $('SC').className = 'sc ' + state;
   $('SD').className = 'sd ' + state;
-  $('SL').textContent = stateMap[state] || ('❓ ' + state);
+  $('SL').textContent = map[state] || ('❓ ' + state);
   $('SDT').textContent = data.detail || (data.last_login ? '上次登录: ' + data.last_login : '');
   $('iG').textContent = data.gateway || '--';
   $('iI').textContent = data.ip || '--';
   $('iS').textContent = data.ssid || '--';
+  $('iD').textContent = data.daemon_running ? ('运行中 ✓' + (data.pid ? ' #' + data.pid : '')) : '未运行 ✗';
 
-  if (data.daemon_running) {
-    $('iD').textContent = '运行中 ✓' + (data.pid ? ' #' + data.pid : '');
-  } else {
-    $('iD').textContent = '未运行 ✗';
-  }
-
-  // SSID tags
   const ssids = (data.SSIDS || data.ssids || 'imust,THUNDER').split(',');
-  const currentSsid = data.ssid || '';
+  const cur = data.ssid || '';
   $('tags').innerHTML = ssids.map(s => {
-    const trimmed = s.trim();
-    const active = trimmed && trimmed === currentSsid ? ' a' : '';
-    return '<div class="tag' + active + '"><span class="d"></span>' + trimmed + '</div>';
+    const t = s.trim(), a = t && t === cur ? ' a' : '';
+    return '<div class="tag'+a+'"><span class="d"></span>'+t+'</div>';
   }).join('');
 
-  // 填充配置表单（仅首次或表单为空时）
-  if ($('cU').value === '' && data.USERNAME !== undefined) {
-    fillConfig(data);
-  }
+  if ($('cU').value === '' && data.USERNAME !== undefined) fillConfig(data);
 }
-
 function fillConfig(d) {
   $('cU').value = d.USERNAME || '';
   $('cP').value = d.PASSWORD || '';
@@ -315,124 +467,70 @@ function fillConfig(d) {
   $('cSI').value = d.SUCCESS_INTERVAL || '30';
 }
 
-// ============================================================
-// Config — POST /api/config
-// ============================================================
 window.doSave = async function() {
-  const u = $('cU').value.trim();
-  const p = $('cP').value.trim();
+  const u = $('cU').value.trim(), p = $('cP').value.trim();
   if (!u || !p) { toast('请填写账号和密码', false); return; }
-
   const payload = {
-    USERNAME: u,
-    PASSWORD: p,
-    GATEWAY: $('cG').value.trim() || 'gw.imust.edu.cn',
-    GATEWAY_IP: $('cGI').value.trim() || '10.16.42.48',
-    AC_ID: $('cA').value.trim() || '6',
-    SSIDS: $('cS').value.trim() || 'imust,THUNDER',
-    MAX_RETRY: parseInt($('cMR').value) || 3,
-    CHECK_INTERVAL: parseInt($('cCI').value) || 5,
-    SUCCESS_INTERVAL: parseInt($('cSI').value) || 30
+    USERNAME:u, PASSWORD:p,
+    GATEWAY:$('cG').value.trim()||'gw.imust.edu.cn',
+    GATEWAY_IP:$('cGI').value.trim()||'10.16.42.48',
+    AC_ID:$('cA').value.trim()||'6',
+    SSIDS:$('cS').value.trim()||'imust,THUNDER',
+    MAX_RETRY:parseInt($('cMR').value)||3,
+    CHECK_INTERVAL:parseInt($('cCI').value)||5,
+    SUCCESS_INTERVAL:parseInt($('cSI').value)||30
   };
-
-  const result = await apiPost('/api/config', payload);
-  if (result) {
-    if (result.result === 1 || result.ok) {
-      toast('✅ 配置已保存，守护进程将自动重启');
-      setTimeout(loadStatus, 2000);
-    } else {
-      toast('❌ 保存失败: ' + (result.error || result.message || '未知错误'), false);
-    }
-  } else {
-    toast('❌ 网络错误，无法保存', false);
-  }
+  const r = await apiPost('/api/config', payload);
+  if (r) { toast(r.result===1||r.ok ? '✅ 配置已保存' : '❌ '+(r.error||r.message||'保存失败'), r.result===1||r.ok); setTimeout(loadStatus,2000); }
+  else toast('❌ 网络错误', false);
 };
 
-// ============================================================
-// Logs — GET /api/logs → {"logs": [...]}
-// ============================================================
 async function loadLogs() {
   const data = await apiGet('/api/logs');
-  if (!data || !data.logs || !data.logs.length) {
-    $('LV').innerHTML = '<div class="ll" style="color:var(--text2)">暂无日志</div>';
-    return;
-  }
-
+  if (!data || !data.logs || !data.logs.length) { $('LV').innerHTML = '<div class="ll" style="color:var(--text3)">暂无日志</div>'; return; }
   $('LV').innerHTML = data.logs.map(l => {
     let c = '';
-    if (l.includes('[ERROR]') || l.includes('[FAIL]') || l.includes('失败')) c = ' e';
-    else if (l.includes('[SUCCESS]') || l.includes('[OK]') || l.includes('成功')) c = ' s';
-    else if (l.includes('[WARN]') || l.includes('警告')) c = ' w';
-    return '<div class="ll' + c + '">' + l.replace(/</g, '&lt;') + '</div>';
+    if (l.includes('[ERROR]')||l.includes('[FAIL]')||l.includes('失败')) c=' e';
+    else if (l.includes('[SUCCESS]')||l.includes('[OK]')||l.includes('成功')) c=' s';
+    else if (l.includes('[WARN]')||l.includes('警告')) c=' w';
+    return '<div class="ll'+c+'">'+l.replace(/</g,'&lt;')+'</div>';
   }).join('');
   $('LV').scrollTop = $('LV').scrollHeight;
 }
-
 window.doClearLog = async function() {
-  const result = await apiPost('/api/logs/clear', {});
-  if (result) {
-    toast('🗑 日志已清空');
-    loadLogs();
-  } else {
-    toast('清空失败', false);
-  }
+  const r = await apiPost('/api/logs/clear', {});
+  if (r) { toast('🗑 日志已清空'); loadLogs(); } else toast('清空失败', false);
 };
 
-// ============================================================
-// Test Login — POST /api/test-login
-// ============================================================
 window.doTestLogin = async function() {
-  const btn = $('testBtn');
-  const el = $('testResult');
-
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinning">⏳</span> 测试中...';
-  el.style.display = 'block';
-  el.innerHTML = '<div class="info">正在执行登录测试，请稍候...</div>';
-
+  const btn = $('testBtn'), el = $('testResult');
+  btn.disabled = true; btn.innerHTML = '<span class="spinning">⏳</span> 测试中...';
+  el.style.display = 'block'; el.innerHTML = '<div class="info">正在执行登录测试，请稍候...</div>';
   const data = await apiPost('/api/test-login', {});
-
   if (!data) {
-    el.innerHTML = '<div class="fail">❌ 无法连接到守护进程</div>'
-      + '<div class="info">请确认 srun-login 进程正在运行</div>';
-    btn.disabled = false;
-    btn.textContent = '🧪 开始测试';
-    return;
+    el.innerHTML = '<div class="fail">❌ 无法连接到守护进程</div><div class="info">请确认 srun-login 进程正在运行</div>';
+    btn.disabled = false; btn.textContent = '🧪 开始测试'; return;
   }
-
   let html = '';
-
-  // 显示测试过程中获取的信息
-  if (data.ip) html += '<div class="info">📡 IP: ' + data.ip + '</div>';
-  if (data.token) html += '<div class="info">🔑 Token: ' + (data.token.length > 20 ? data.token.substring(0, 20) + '...' : data.token) + '</div>';
-  if (data.gateway) html += '<div class="info">🌐 网关: ' + data.gateway + '</div>';
-
-  // 结果判断
-  const success = data.result === 1 || data.ok === true || data.success === true;
-  if (success) {
-    html += '<div class="ok" style="margin-top:6px">✅ 登录测试成功！</div>';
-    if (data.message) html += '<div class="info">' + data.message + '</div>';
+  if (data.ip) html += '<div class="info">📡 IP: '+data.ip+'</div>';
+  if (data.token) html += '<div class="info">🔑 Token: '+(data.token.length>20?data.token.substring(0,20)+'...':data.token)+'</div>';
+  if (data.gateway) html += '<div class="info">🌐 网关: '+data.gateway+'</div>';
+  const ok = data.result===1||data.ok===true||data.success===true;
+  if (ok) {
+    html += '<div class="ok" style="margin-top:8px">✅ 登录测试成功！</div>';
+    if (data.message) html += '<div class="info">'+data.message+'</div>';
   } else {
-    html += '<div class="fail" style="margin-top:6px">❌ 登录测试失败</div>';
-    if (data.error) html += '<div class="fail">' + data.error + '</div>';
-    if (data.message) html += '<div class="info">' + data.message + '</div>';
+    html += '<div class="fail" style="margin-top:8px">❌ 登录测试失败</div>';
+    if (data.error) html += '<div class="fail">'+data.error+'</div>';
+    if (data.message) html += '<div class="info">'+data.message+'</div>';
     if (!data.error && !data.message) html += '<div class="info">请检查账号密码和网关配置</div>';
   }
-
-  el.innerHTML = html;
-  btn.disabled = false;
-  btn.textContent = '🧪 开始测试';
-
-  // 刷新状态
+  el.innerHTML = html; btn.disabled = false; btn.textContent = '🧪 开始测试';
   setTimeout(loadStatus, 2000);
 };
 
-// ============================================================
-// Init
-// ============================================================
 (async function() {
   await loadStatus();
-  // 定时刷新
   setInterval(loadStatus, 5000);
 })();
 </script>
