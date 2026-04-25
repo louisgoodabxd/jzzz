@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os/exec"
@@ -288,6 +289,46 @@ func resolveDoH(domain string) string {
 	return ""
 }
 
+// getLocalIP 通过 UDP socket 获取本机出口 IP（不发送实际流量）
+// 与 Python 版 ip_utils.py 的 get_local_ipv4_addresses 逻辑一致
+func getLocalIP() string {
+	conn, err := net.Dial("udp", "198.51.100.1:80")
+	if err != nil {
+		return ""
+	}
+	defer conn.Close()
+	addr := conn.LocalAddr()
+	if udpAddr, ok := addr.(*net.UDPAddr); ok {
+		return udpAddr.IP.String()
+	}
+	// TCP fallback
+	if tcpAddr, ok := addr.(*net.TCPAddr); ok {
+		return tcpAddr.IP.String()
+	}
+	return ""
+}
+
+// getLocalIPFromWlan 从 wlan0 接口获取 IP
+func getLocalIPFromWlan() string {
+	ifaces := []string{"wlan0", "rmnet0", "eth0"}
+	for _, name := range ifaces {
+		iface, err := net.InterfaceByName(name)
+		if err != nil {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			if ipNet, ok := addr.(*net.IPNet); ok && ipNet.IP.To4() != nil {
+				return ipNet.IP.String()
+			}
+		}
+	}
+	return ""
+}
+
 // resolvedIP 缓存解析结果，避免每次都 shell 调用
 var resolvedIPCache string
 
@@ -405,8 +446,15 @@ func doLogin(cfg Config) LoginResult {
 	callback := generateCallback()
 	ts := fmt.Sprintf("%d", time.Now().UnixMilli())
 
-	// Step 1: Check current status / get IP
+	// Step 1: 获取客户端 IP（优先从网卡，不依赖 rad_user_info）
 	LogInfo(fmt.Sprintf("正在检查在线状态... (网关: %s, IP: %s)", gateway, gatewayIP))
+
+	// 先从网卡获取本机 IP
+	var ip string
+	ip = getLocalIP()
+	if ip == "" {
+		ip = getLocalIPFromWlan()
+	}
 
 	radURL := fmt.Sprintf("cgi-bin/rad_user_info?callback=%s&_=%s", callback, ts)
 	body, err := doSRUNGet(gateway, gatewayIP, radURL)
@@ -417,39 +465,42 @@ func doLogin(cfg Config) LoginResult {
 		return result
 	}
 
-	var ip string
 	var alreadyOnline bool
 
+	// 尝试从响应中提取更准确的 IP（覆盖网卡获取的）
 	if strings.Contains(body, "not_online_error") {
-		// Not online, need to get IP from response
 		data, err := parseJSONP(body)
 		if err == nil {
 			if v, ok := data["client_ip"]; ok {
-				ip = fmt.Sprintf("%v", v)
+				respIP := fmt.Sprintf("%v", v)
+				if respIP != "" {
+					ip = respIP
+				}
 			} else if v, ok := data["online_ip"]; ok {
-				ip = fmt.Sprintf("%v", v)
+				respIP := fmt.Sprintf("%v", v)
+				if respIP != "" {
+					ip = respIP
+				}
 			}
 		}
-		if ip == "" {
-			// Try to get IP from the gateway directly
-			ip = cfg.GATEWAY_IP
-		}
-		LogInfo(fmt.Sprintf("未在线，IP: %s", ip))
+		LogInfo(fmt.Sprintf("未在线，客户端IP: %s", ip))
 	} else {
-		// Already online
 		data, err := parseJSONP(body)
 		if err == nil {
 			if v, ok := data["client_ip"]; ok {
-				ip = fmt.Sprintf("%v", v)
+				respIP := fmt.Sprintf("%v", v)
+				if respIP != "" {
+					ip = respIP
+				}
 			} else if v, ok := data["online_ip"]; ok {
-				ip = fmt.Sprintf("%v", v)
+				respIP := fmt.Sprintf("%v", v)
+				if respIP != "" {
+					ip = respIP
+				}
 			}
 			if v, ok := data["error"]; ok && fmt.Sprintf("%v", v) == "ok" {
 				alreadyOnline = true
 			}
-		}
-		if ip == "" {
-			ip = cfg.GATEWAY_IP
 		}
 		if alreadyOnline {
 			result.Result = 1
@@ -458,7 +509,7 @@ func doLogin(cfg Config) LoginResult {
 			LogInfo("已经在线，无需重新登录")
 			return result
 		}
-		LogInfo(fmt.Sprintf("需要登录，IP: %s", ip))
+		LogInfo(fmt.Sprintf("需要登录，客户端IP: %s", ip))
 	}
 
 	// Step 2: Get challenge token
