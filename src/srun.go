@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os/exec"
 	"strings"
 	"time"
 )
@@ -171,6 +172,74 @@ func generateCallback() string {
 	return fmt.Sprintf("jQuery%d", time.Now().UnixMilli())
 }
 
+// resolveHost 通过 shell 命令解析域名，绕过 Android 上 Go 的 DNS 权限限制
+// 尝试顺序: getent → nslookup → 直接返回配置的 IP
+func resolveHost(domain, fallbackIP string) string {
+	// 方法1: getent hosts (Android 系统解析器)
+	if out, err := exec.Command("getent", "hosts", domain).Output(); err == nil {
+		parts := strings.Fields(string(out))
+		if len(parts) > 0 && strings.Contains(parts[0], ".") {
+			LogInfo(fmt.Sprintf("DNS解析(getent): %s → %s", domain, parts[0]))
+			return parts[0]
+		}
+	}
+
+	// 方法2: nslookup
+	if out, err := exec.Command("nslookup", domain).Output(); err == nil {
+		lines := strings.Split(string(out), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "Address:") || strings.HasPrefix(line, "地址:") {
+				ip := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(line, "Address:"), "地址:"))
+				// 跳过 DNS 服务器地址（带 #53 的）
+				if strings.Contains(ip, "#") {
+					continue
+				}
+				if strings.Contains(ip, ".") && !strings.HasPrefix(ip, "127.") {
+					LogInfo(fmt.Sprintf("DNS解析(nslookup): %s → %s", domain, ip))
+					return ip
+				}
+			}
+		}
+	}
+
+	// 方法3: ping -c1 解析
+	if out, err := exec.Command("ping", "-c1", "-W2", domain).Output(); err == nil {
+		s := string(out)
+		if idx := strings.Index(s, "("); idx >= 0 {
+			end := strings.Index(s[idx:], ")")
+			if end > 1 {
+				ip := s[idx+1 : idx+end]
+				if strings.Contains(ip, ".") {
+					LogInfo(fmt.Sprintf("DNS解析(ping): %s → %s", domain, ip))
+					return ip
+				}
+			}
+		}
+	}
+
+	// 兜底: 使用配置的 IP
+	LogWarn(fmt.Sprintf("DNS解析失败，使用配置IP: %s", fallbackIP))
+	return fallbackIP
+}
+
+// resolvedIP 缓存解析结果，避免每次都 shell 调用
+var resolvedIPCache string
+
+func getResolvedIP(gateway, gatewayIP string) string {
+	// 如果配置的是 IP 地址，直接返回
+	if gatewayIP != "" && strings.Contains(gatewayIP, ".") && !strings.Contains(gatewayIP, " ") {
+		return gatewayIP
+	}
+	// 如果有缓存，直接用
+	if resolvedIPCache != "" {
+		return resolvedIPCache
+	}
+	// 解析域名
+	resolvedIPCache = resolveHost(gateway, gatewayIP)
+	return resolvedIPCache
+}
+
 // srunHTTPClient returns an HTTP client that skips TLS verification
 func srunHTTPClient() *http.Client {
 	return &http.Client{
@@ -257,7 +326,7 @@ func doLogin(cfg Config) LoginResult {
 	}
 
 	gateway := cfg.GATEWAY
-	gatewayIP := cfg.GATEWAY_IP
+	gatewayIP := getResolvedIP(gateway, cfg.GATEWAY_IP)
 	username := cfg.USERNAME
 	password := cfg.PASSWORD
 	acID := cfg.AC_ID
