@@ -172,10 +172,15 @@ func generateCallback() string {
 	return fmt.Sprintf("jQuery%d", time.Now().UnixMilli())
 }
 
-// resolveHost 通过 shell 命令解析域名，绕过 Android 上 Go 的 DNS 权限限制
-// 尝试顺序: getent → nslookup → 直接返回配置的 IP
+// resolveHost 通过多种方式解析域名，绕过 Android 上 Go 的 DNS 权限限制
+// 优先级: DoH(HTTPS) → getent → nslookup → ping → 兜底配置IP
 func resolveHost(domain, fallbackIP string) string {
-	// 方法1: getent hosts (Android 系统解析器)
+	// 方法1: DNS over HTTPS (Google/Cloudflare) — 最可靠，不依赖系统DNS
+	if ip := resolveDoH(domain); ip != "" {
+		return ip
+	}
+
+	// 方法2: getent hosts (Android 系统解析器)
 	if out, err := exec.Command("getent", "hosts", domain).Output(); err == nil {
 		parts := strings.Fields(string(out))
 		if len(parts) > 0 && strings.Contains(parts[0], ".") {
@@ -184,14 +189,13 @@ func resolveHost(domain, fallbackIP string) string {
 		}
 	}
 
-	// 方法2: nslookup
+	// 方法3: nslookup
 	if out, err := exec.Command("nslookup", domain).Output(); err == nil {
 		lines := strings.Split(string(out), "\n")
 		for _, line := range lines {
 			line = strings.TrimSpace(line)
 			if strings.HasPrefix(line, "Address:") || strings.HasPrefix(line, "地址:") {
 				ip := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(line, "Address:"), "地址:"))
-				// 跳过 DNS 服务器地址（带 #53 的）
 				if strings.Contains(ip, "#") {
 					continue
 				}
@@ -203,7 +207,7 @@ func resolveHost(domain, fallbackIP string) string {
 		}
 	}
 
-	// 方法3: ping -c1 解析
+	// 方法4: ping -c1 解析
 	if out, err := exec.Command("ping", "-c1", "-W2", domain).Output(); err == nil {
 		s := string(out)
 		if idx := strings.Index(s, "("); idx >= 0 {
@@ -221,6 +225,66 @@ func resolveHost(domain, fallbackIP string) string {
 	// 兜底: 使用配置的 IP
 	LogWarn(fmt.Sprintf("DNS解析失败，使用配置IP: %s", fallbackIP))
 	return fallbackIP
+}
+
+// resolveDoH 通过 DNS over HTTPS 解析域名（通过 IP 直连 DoH 服务器，不依赖系统 DNS）
+func resolveDoH(domain string) string {
+	// DoH 服务器列表（用 IP 直连，Host 头设为域名）
+	dohServers := []struct {
+		ip   string
+		host string
+		path string
+	}{
+		{"8.8.8.8", "dns.google", fmt.Sprintf("/resolve?name=%s&type=A", domain)},
+		{"1.1.1.1", "cloudflare-dns.com", fmt.Sprintf("/dns-query?name=%s&type=A", domain)},
+	}
+
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	for _, doh := range dohServers {
+		u := fmt.Sprintf("https://%s%s", doh.ip, doh.path)
+		req, err := http.NewRequest("GET", u, nil)
+		if err != nil {
+			continue
+		}
+		req.Header.Set("Host", doh.host)
+		req.Header.Set("Accept", "application/dns-json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			continue
+		}
+		defer resp.Body.Close()
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			continue
+		}
+
+		// 解析 DoH JSON 响应
+		var result struct {
+			Answer []struct {
+				Data string `json:"data"`
+			} `json:"Answer"`
+		}
+		if err := json.Unmarshal(body, &result); err != nil {
+			continue
+		}
+
+		for _, ans := range result.Answer {
+			if strings.Contains(ans.Data, ".") && !strings.HasPrefix(ans.Data, "127.") {
+				LogInfo(fmt.Sprintf("DNS解析(DoH %s): %s → %s", doh.host, domain, ans.Data))
+				return ans.Data
+			}
+		}
+	}
+
+	return ""
 }
 
 // resolvedIP 缓存解析结果，避免每次都 shell 调用
