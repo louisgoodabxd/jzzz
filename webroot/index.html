@@ -342,7 +342,7 @@ body::before{
       <div class="card-title">📡 网络设置</div>
       <div class="fg"><label>网关地址</label><input id="cG" placeholder="gw.imust.edu.cn"></div>
       <div class="fr">
-        <div class="fg"><label>网关 IP</label><input id="cGI" placeholder="10.16.42.48"></div>
+        <div class="fg"><label>网关 IP</label><input id="cGI" placeholder="198.18.0.85"></div>
         <div class="fg"><label>AC ID</label><input id="cA" placeholder="6"></div>
       </div>
       <div class="fg"><label>监听 SSID（逗号分隔）</label><input id="cS" placeholder="imust,THUNDER"></div>
@@ -459,7 +459,7 @@ function fillConfig(d) {
   $('cU').value = d.USERNAME || '';
   $('cP').value = d.PASSWORD || '';
   $('cG').value = d.GATEWAY || 'gw.imust.edu.cn';
-  $('cGI').value = d.GATEWAY_IP || '10.16.42.48';
+  $('cGI').value = d.GATEWAY_IP || '198.18.0.85';
   $('cA').value = d.AC_ID || '6';
   $('cS').value = d.SSIDS || 'imust,THUNDER';
   $('cMR').value = d.MAX_RETRY || '3';
@@ -473,7 +473,7 @@ window.doSave = async function() {
   const payload = {
     USERNAME:u, PASSWORD:p,
     GATEWAY:$('cG').value.trim()||'gw.imust.edu.cn',
-    GATEWAY_IP:$('cGI').value.trim()||'10.16.42.48',
+    GATEWAY_IP:$('cGI').value.trim()||'198.18.0.85',
     AC_ID:$('cA').value.trim()||'6',
     SSIDS:$('cS').value.trim()||'imust,THUNDER',
     MAX_RETRY:parseInt($('cMR').value)||3,
