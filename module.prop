@@ -1,0 +1,7 @@
+id=srun-auto-login
+name=SRun Auto Login - IMUST
+version=v1.0.0
+versionCode=1
+author=OpenClaw
+description=IMUST/THUNDER 校园网深澜自动登录模块。连接指定WiFi后自动认证，支持通知栏状态显示。
+

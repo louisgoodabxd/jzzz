@@ -1,0 +1,407 @@
+package main
+
+import (
+	"crypto/hmac"
+	"crypto/md5"
+	"crypto/sha1"
+	"crypto/tls"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+)
+
+// Custom Base64 alphabet used by SRUN
+const srunBase64Alpha = "LVoJPiCN2R8G90yg+hmFHuacZ1OWMnrsSTXkYpUq/3dlbfKwv6xztjI7DeBE45QA"
+
+var srunBase64Enc *base64.Encoding
+
+func init() {
+	srunBase64Enc = base64.NewEncoding(srunBase64Alpha).WithPadding(base64.StdPadding)
+}
+
+// getMD5 returns HMAC-MD5(password, token)
+func getMD5(password, token string) string {
+	h := hmac.New(md5.New, []byte(token))
+	h.Write([]byte(password))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// getSHA1 returns SHA1(value)
+func getSHA1(value string) string {
+	h := sha1.New()
+	h.Write([]byte(value))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// ordat returns the byte value at index idx, or 0 if out of range
+func ordat(msg []byte, idx int) uint32 {
+	if idx < len(msg) {
+		return uint32(msg[idx])
+	}
+	return 0
+}
+
+// sencode converts a byte slice to uint32 slice (little-endian packing)
+// If key is true, appends the length
+func sencode(msg []byte, key bool) []uint32 {
+	l := len(msg)
+	var pwd []uint32
+	for i := 0; i < l; i += 4 {
+		pwd = append(pwd,
+			ordat(msg, i)|
+				ordat(msg, i+1)<<8|
+				ordat(msg, i+2)<<16|
+				ordat(msg, i+3)<<24)
+	}
+	if key {
+		pwd = append(pwd, uint32(l))
+	}
+	return pwd
+}
+
+// lencode converts a uint32 slice back to bytes (little-endian unpacking)
+// If key is true, uses msg[last] as the output length
+func lencode(msg []uint32, key bool) []byte {
+	l := len(msg)
+	ll := (l - 1) << 2
+	if key {
+		m := int(msg[l-1])
+		if m < ll-3 || m > ll {
+			return nil
+		}
+		ll = m
+	}
+	result := make([]byte, 0, l*4)
+	for i := 0; i < l; i++ {
+		v := msg[i]
+		result = append(result,
+			byte(v&0xff),
+			byte((v>>8)&0xff),
+			byte((v>>16)&0xff),
+			byte((v>>24)&0xff),
+		)
+	}
+	if key {
+		return result[:ll]
+	}
+	return result
+}
+
+// get_xencode implements the XXTEA-like encryption
+func get_xencode(msg []byte, key []byte) []byte {
+	if len(msg) == 0 {
+		return nil
+	}
+
+	pwd := sencode(msg, true)
+	pwdk := sencode(key, false)
+
+	// Pad key to at least 4 elements
+	for len(pwdk) < 4 {
+		pwdk = append(pwdk, 0)
+	}
+
+	n := len(pwd) - 1
+	if n < 1 {
+		// Need at least 2 elements for XXTEA
+		return lencode(pwd, false)
+	}
+
+	c := uint32(0x9E3779B9) // delta constant
+	var d uint32 = 0
+	z := pwd[n]
+	y := pwd[0]
+	var p int
+	q := 6 + 52/(len(pwd))
+
+	for q > 0 {
+		d = (d + c) & 0xFFFFFFFF
+		e := (d >> 2) & 3
+		p = 0
+		y = pwd[0]
+		for p < n {
+			y = pwd[p+1]
+			m := (z>>5 ^ y<<2) + ((y>>3 ^ z<<4) ^ (d ^ y)) + (pwdk[(p&3)^int(e)] ^ z)
+			pwd[p] = (pwd[p] + m) & 0xFFFFFFFF
+			z = pwd[p]
+			p++
+		}
+		y = pwd[0]
+		m := (z>>5 ^ y<<2) + ((y>>3 ^ z<<4) ^ (d ^ y)) + (pwdk[(p&3)^int(e)] ^ z)
+		pwd[n] = (pwd[n] + m) & 0xFFFFFFFF
+		z = pwd[n]
+		q--
+	}
+
+	return lencode(pwd, false)
+}
+
+// srunBase64Encode encodes bytes using the SRUN custom base64 alphabet
+func srunBase64Encode(data []byte) string {
+	return srunBase64Enc.EncodeToString(data)
+}
+
+// jsonResponse parses a JSONP response body
+// Input: jQuery1234({"key":"value"})
+// Output: map with the JSON data
+func parseJSONP(body string) (map[string]interface{}, error) {
+	// Find the JSON part between first ( and last )
+	start := strings.Index(body, "(")
+	end := strings.LastIndex(body, ")")
+	if start < 0 || end < 0 || start >= end {
+		return nil, fmt.Errorf("invalid JSONP response: %s", body)
+	}
+	jsonStr := body[start+1 : end]
+
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
+		return nil, fmt.Errorf("JSON parse error: %v, body: %s", err, jsonStr)
+	}
+	return result, nil
+}
+
+// generateCallback generates a jQuery callback string
+func generateCallback() string {
+	return fmt.Sprintf("jQuery%d", time.Now().UnixMilli())
+}
+
+// doSRUNGet performs a GET request with standard SRUN headers
+func doSRUNGet(gateway, path string) (string, error) {
+	u := fmt.Sprintf("https://%s/%s", gateway, path)
+
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Host", gateway)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+
+	// Skip TLS verification for campus network (self-signed certs)
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	return string(data), nil
+}
+
+// LoginResult holds the result of a login attempt
+type LoginResult struct {
+	Result  int    `json:"result"`
+	IP      string `json:"ip"`
+	Token   string `json:"token"`
+	Gateway string `json:"gateway"`
+	Message string `json:"message"`
+	Error   string `json:"error"`
+}
+
+// doLogin performs the full SRUN login flow
+func doLogin(cfg Config) LoginResult {
+	result := LoginResult{
+		Gateway: cfg.GATEWAY,
+	}
+
+	gateway := cfg.GATEWAY
+	username := cfg.USERNAME
+	password := cfg.PASSWORD
+	acID := cfg.AC_ID
+
+	if username == "" || password == "" {
+		result.Error = "用户名或密码为空"
+		result.Message = "请先配置用户名和密码"
+		return result
+	}
+
+	callback := generateCallback()
+	ts := fmt.Sprintf("%d", time.Now().UnixMilli())
+
+	// Step 1: Check current status / get IP
+	LogInfo(fmt.Sprintf("正在检查在线状态... (网关: %s)", gateway))
+
+	radURL := fmt.Sprintf("cgi-bin/rad_user_info?callback=%s&_=%s", callback, ts)
+	body, err := doSRUNGet(gateway, radURL)
+	if err != nil {
+		result.Error = fmt.Sprintf("获取在线信息失败: %v", err)
+		result.Message = "连接网关失败"
+		LogError(result.Error)
+		return result
+	}
+
+	var ip string
+	var alreadyOnline bool
+
+	if strings.Contains(body, "not_online_error") {
+		// Not online, need to get IP from response
+		data, err := parseJSONP(body)
+		if err == nil {
+			if v, ok := data["client_ip"]; ok {
+				ip = fmt.Sprintf("%v", v)
+			} else if v, ok := data["online_ip"]; ok {
+				ip = fmt.Sprintf("%v", v)
+			}
+		}
+		if ip == "" {
+			// Try to get IP from the gateway directly
+			ip = cfg.GATEWAY_IP
+		}
+		LogInfo(fmt.Sprintf("未在线，IP: %s", ip))
+	} else {
+		// Already online
+		data, err := parseJSONP(body)
+		if err == nil {
+			if v, ok := data["client_ip"]; ok {
+				ip = fmt.Sprintf("%v", v)
+			} else if v, ok := data["online_ip"]; ok {
+				ip = fmt.Sprintf("%v", v)
+			}
+			if v, ok := data["error"]; ok && fmt.Sprintf("%v", v) == "ok" {
+				alreadyOnline = true
+			}
+		}
+		if ip == "" {
+			ip = cfg.GATEWAY_IP
+		}
+		if alreadyOnline {
+			result.Result = 1
+			result.IP = ip
+			result.Message = "已经在线"
+			LogInfo("已经在线，无需重新登录")
+			return result
+		}
+		LogInfo(fmt.Sprintf("需要登录，IP: %s", ip))
+	}
+
+	// Step 2: Get challenge token
+	callback = generateCallback()
+	ts = fmt.Sprintf("%d", time.Now().UnixMilli())
+
+	challengeURL := fmt.Sprintf("cgi-bin/get_challenge?callback=%s&username=%s&ip=%s&_=%s",
+		callback, url.QueryEscape(username), url.QueryEscape(ip), ts)
+
+	LogInfo("正在获取 challenge token...")
+	body, err = doSRUNGet(gateway, challengeURL)
+	if err != nil {
+		result.Error = fmt.Sprintf("获取challenge失败: %v", err)
+		result.Message = "获取challenge失败"
+		LogError(result.Error)
+		return result
+	}
+
+	data, err := parseJSONP(body)
+	if err != nil {
+		result.Error = fmt.Sprintf("解析challenge响应失败: %v", err)
+		result.Message = "解析challenge失败"
+		LogError(result.Error)
+		return result
+	}
+
+	tokenIface, ok := data["challenge"]
+	if !ok {
+		result.Error = "响应中没有challenge字段"
+		result.Message = "challenge字段缺失"
+		LogError(result.Error)
+		return result
+	}
+	token := fmt.Sprintf("%v", tokenIface)
+	result.Token = token
+	LogInfo(fmt.Sprintf("获取到token: %s", token[:min(16, len(token))]+"..."))
+
+	// Step 3: Build encrypted info
+	// info = {"username":"...","password":"...","ip":"...","acid":"6","enc_ver":"srun_bx1"}
+	acid := acID
+	infoJSON := fmt.Sprintf(`{"username":"%s","password":"%s","ip":"%s","acid":"%s","enc_ver":"srun_bx1"}`,
+		username, password, ip, acid)
+
+	// i = "{SRBX1}" + custom_base64(xencode(info, token))
+	encrypted := get_xencode([]byte(infoJSON), []byte(token))
+	iValue := "{SRBX1}" + srunBase64Encode(encrypted)
+
+	// hmd5 = HMAC-MD5(password, token)
+	hmd5 := getMD5(password, token)
+
+	// chkstr = token + username + token + hmd5 + token + acid + token + ip + token + "200" + token + "1" + token + i
+	chkstr := token + username + token + hmd5 + token + acid + token + ip + token + "200" + token + "1" + token + iValue
+
+	// chksum = SHA1(chkstr)
+	chksum := getSHA1(chkstr)
+
+	// Step 4: Login
+	callback = generateCallback()
+	ts = fmt.Sprintf("%d", time.Now().UnixMilli())
+
+	loginURL := fmt.Sprintf(
+		"cgi-bin/srun_portal?callback=%s&action=login&username=%s&password=%%7BMD5%%7D%s&ac_id=%s&ip=%s&chksum=%s&info=%s&n=200&type=1&os=windows+10&name=windows&double_stack=0&_=%s",
+		callback,
+		url.QueryEscape(username),
+		url.QueryEscape(hmd5),
+		url.QueryEscape(acid),
+		url.QueryEscape(ip),
+		url.QueryEscape(chksum),
+		url.QueryEscape(iValue),
+		ts,
+	)
+
+	LogInfo("正在登录...")
+	body, err = doSRUNGet(gateway, loginURL)
+	if err != nil {
+		result.Error = fmt.Sprintf("登录请求失败: %v", err)
+		result.Message = "登录请求失败"
+		LogError(result.Error)
+		return result
+	}
+
+	data, err = parseJSONP(body)
+	if err != nil {
+		result.Error = fmt.Sprintf("解析登录响应失败: %v", err)
+		result.Message = "解析登录响应失败"
+		LogError(result.Error)
+		return result
+	}
+
+	result.IP = ip
+	if errMsg, ok := data["error"]; ok && fmt.Sprintf("%v", errMsg) == "ok" {
+		result.Result = 1
+		result.Message = "登录成功"
+		LogInfo(fmt.Sprintf("登录成功! IP: %s", ip))
+	} else {
+		errorMsg := "未知错误"
+		if msg, ok := data["error_msg"]; ok {
+			errorMsg = fmt.Sprintf("%v", msg)
+		} else if msg, ok := data["error"]; ok {
+			errorMsg = fmt.Sprintf("%v", msg)
+		}
+		result.Error = errorMsg
+		result.Message = fmt.Sprintf("登录失败: %s", errorMsg)
+		LogError(fmt.Sprintf("登录失败: %s", errorMsg))
+	}
+
+	return result
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
