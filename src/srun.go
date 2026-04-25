@@ -173,14 +173,10 @@ func generateCallback() string {
 }
 
 // resolveHost 通过多种方式解析域名，绕过 Android 上 Go 的 DNS 权限限制
-// 优先级: DoH(HTTPS) → getent → nslookup → ping → 兜底配置IP
+// Shell 命令用系统 libc 解析器（有正确的 SELinux 上下文），可以解析校园内网域名
+// DoH 用公共 DNS，无法解析校园域名，仅作兜底
 func resolveHost(domain, fallbackIP string) string {
-	// 方法1: DNS over HTTPS (Google/Cloudflare) — 最可靠，不依赖系统DNS
-	if ip := resolveDoH(domain); ip != "" {
-		return ip
-	}
-
-	// 方法2: getent hosts (Android 系统解析器)
+	// 方法1: getent hosts (Android 系统解析器，SELinux 上下文正确)
 	if out, err := exec.Command("getent", "hosts", domain).Output(); err == nil {
 		parts := strings.Fields(string(out))
 		if len(parts) > 0 && strings.Contains(parts[0], ".") {
@@ -189,7 +185,7 @@ func resolveHost(domain, fallbackIP string) string {
 		}
 	}
 
-	// 方法3: nslookup
+	// 方法2: nslookup
 	if out, err := exec.Command("nslookup", domain).Output(); err == nil {
 		lines := strings.Split(string(out), "\n")
 		for _, line := range lines {
@@ -207,7 +203,7 @@ func resolveHost(domain, fallbackIP string) string {
 		}
 	}
 
-	// 方法4: ping -c1 解析
+	// 方法3: ping -c1 解析
 	if out, err := exec.Command("ping", "-c1", "-W2", domain).Output(); err == nil {
 		s := string(out)
 		if idx := strings.Index(s, "("); idx >= 0 {
@@ -220,6 +216,11 @@ func resolveHost(domain, fallbackIP string) string {
 				}
 			}
 		}
+	}
+
+	// 方法4: DoH (公共 DNS，可能无法解析校园内网域名，但外网域名可以)
+	if ip := resolveDoH(domain); ip != "" {
+		return ip
 	}
 
 	// 兜底: 使用配置的 IP
