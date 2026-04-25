@@ -12,7 +12,7 @@ import (
 const (
 	ConfigPath     = "/data/adb/srun/config.conf"
 	DefaultGateway = "gw.imust.edu.cn"
-	DefaultGatewayIP = "10.16.42.48"
+	DefaultGatewayIP = "198.18.0.85"
 	DefaultACID    = "6"
 	DefaultSSIDs   = "imust,THUNDER"
 	DefaultMaxRetry = 3
