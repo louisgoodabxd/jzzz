@@ -171,38 +171,72 @@ func generateCallback() string {
 	return fmt.Sprintf("jQuery%d", time.Now().UnixMilli())
 }
 
-// doSRUNGet performs a GET request with standard SRUN headers
-func doSRUNGet(gateway, path string) (string, error) {
-	u := fmt.Sprintf("https://%s/%s", gateway, path)
+// srunHTTPClient returns an HTTP client that skips TLS verification
+func srunHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+}
 
+// doSRUNGet performs a GET request with automatic domain→IP fallback.
+// Android 上 Go 二进制没有 DNS 权限，所以直接用 IP 连接，Host 头设为域名。
+func doSRUNGet(gateway, gatewayIP, path string) (string, error) {
+	client := srunHTTPClient()
+	ua := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+
+	// 优先用 IP（跳过 DNS），Host 头设为域名
+	if gatewayIP != "" {
+		u := fmt.Sprintf("https://%s/%s", gatewayIP, path)
+		req, err := http.NewRequest("GET", u, nil)
+		if err == nil {
+			req.Header.Set("Host", gateway)
+			req.Header.Set("User-Agent", ua)
+			resp, err := client.Do(req)
+			if err == nil {
+				defer resp.Body.Close()
+				data, err := io.ReadAll(resp.Body)
+				if err == nil {
+					return string(data), nil
+				}
+			}
+		}
+		// IP HTTPS 失败，尝试 IP HTTP
+		u = fmt.Sprintf("http://%s/%s", gatewayIP, path)
+		req, err = http.NewRequest("GET", u, nil)
+		if err == nil {
+			req.Header.Set("Host", gateway)
+			req.Header.Set("User-Agent", ua)
+			resp, err := client.Do(req)
+			if err == nil {
+				defer resp.Body.Close()
+				data, err := io.ReadAll(resp.Body)
+				if err == nil {
+					return string(data), nil
+				}
+			}
+		}
+	}
+
+	// 最后尝试域名直连
+	u := fmt.Sprintf("https://%s/%s", gateway, path)
 	req, err := http.NewRequest("GET", u, nil)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Host", gateway)
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-
-	// Skip TLS verification for campus network (self-signed certs)
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-			},
-		},
-	}
-
+	req.Header.Set("User-Agent", ua)
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("所有连接方式均失败 (IP: %s, 域名: %s): %v", gatewayIP, gateway, err)
 	}
 	defer resp.Body.Close()
-
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
 	}
-
 	return string(data), nil
 }
 
@@ -223,6 +257,7 @@ func doLogin(cfg Config) LoginResult {
 	}
 
 	gateway := cfg.GATEWAY
+	gatewayIP := cfg.GATEWAY_IP
 	username := cfg.USERNAME
 	password := cfg.PASSWORD
 	acID := cfg.AC_ID
@@ -237,10 +272,10 @@ func doLogin(cfg Config) LoginResult {
 	ts := fmt.Sprintf("%d", time.Now().UnixMilli())
 
 	// Step 1: Check current status / get IP
-	LogInfo(fmt.Sprintf("正在检查在线状态... (网关: %s)", gateway))
+	LogInfo(fmt.Sprintf("正在检查在线状态... (网关: %s, IP: %s)", gateway, gatewayIP))
 
 	radURL := fmt.Sprintf("cgi-bin/rad_user_info?callback=%s&_=%s", callback, ts)
-	body, err := doSRUNGet(gateway, radURL)
+	body, err := doSRUNGet(gateway, gatewayIP, radURL)
 	if err != nil {
 		result.Error = fmt.Sprintf("获取在线信息失败: %v", err)
 		result.Message = "连接网关失败"
@@ -300,7 +335,7 @@ func doLogin(cfg Config) LoginResult {
 		callback, url.QueryEscape(username), url.QueryEscape(ip), ts)
 
 	LogInfo("正在获取 challenge token...")
-	body, err = doSRUNGet(gateway, challengeURL)
+	body, err = doSRUNGet(gateway, gatewayIP, challengeURL)
 	if err != nil {
 		result.Error = fmt.Sprintf("获取challenge失败: %v", err)
 		result.Message = "获取challenge失败"
@@ -363,7 +398,7 @@ func doLogin(cfg Config) LoginResult {
 	)
 
 	LogInfo("正在登录...")
-	body, err = doSRUNGet(gateway, loginURL)
+	body, err = doSRUNGet(gateway, gatewayIP, loginURL)
 	if err != nil {
 		result.Error = fmt.Sprintf("登录请求失败: %v", err)
 		result.Message = "登录请求失败"
@@ -397,11 +432,4 @@ func doLogin(cfg Config) LoginResult {
 	}
 
 	return result
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
